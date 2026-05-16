@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import { initiatives as rawData } from "./data/roadmap";
 
-type TaskStatus = "pending" | "in-progress" | "done";
+type TaskStatus = "not-started" | "started" | "in-progress" | "completed" | "paused";
 
-const STORAGE_KEY = "geoseolab-roadmap-v2";
+const STORAGE_KEY = "geoseolab-roadmap-v3";
 
 function load(): typeof rawData {
   try {
@@ -29,11 +29,13 @@ const statusStyle: Record<string, string> = {
   Done: "bg-emerald-500/15 text-emerald-300 ring-emerald-400/30",
 };
 
-const checkIcon: Record<TaskStatus, string> = {
-  pending: "",
-  "in-progress": "🟡",
-  done: "✅",
-};
+const TASK_STATUSES: { value: TaskStatus; label: string; style: string; dot: string }[] = [
+  { value: "not-started", label: "Not Started", style: "bg-slate-500/20 text-slate-400 ring-slate-500/30 hover:bg-slate-500/30", dot: "bg-slate-500" },
+  { value: "started",     label: "Started",     style: "bg-blue-500/20 text-blue-300 ring-blue-500/30 hover:bg-blue-500/30",   dot: "bg-blue-400" },
+  { value: "in-progress", label: "In Progress", style: "bg-amber-500/20 text-amber-300 ring-amber-500/30 hover:bg-amber-500/30", dot: "bg-amber-400" },
+  { value: "completed",   label: "Completed",   style: "bg-emerald-500/20 text-emerald-300 ring-emerald-500/30 hover:bg-emerald-500/30", dot: "bg-emerald-400" },
+  { value: "paused",      label: "Paused",      style: "bg-rose-500/20 text-rose-300 ring-rose-500/30 hover:bg-rose-500/30",   dot: "bg-rose-400" },
+];
 
 export default function App() {
   const [data, setData] = useState(load());
@@ -46,6 +48,7 @@ export default function App() {
   const [adding, setAdding] = useState<{ i: string; p: number; d: number } | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
 
   useEffect(() => save(data), [data]);
 
@@ -64,7 +67,7 @@ export default function App() {
   );
 
   const allTasks = data.flatMap((i) => i.phases.flatMap((p) => p.days.flatMap((d) => d.tasks)));
-  const doneCount = allTasks.filter((t) => t.status === "done").length;
+  const doneCount = allTasks.filter((t) => t.status === "completed").length;
   const pct = allTasks.length ? Math.round((doneCount / allTasks.length) * 100) : 0;
 
   const togglePhase = (k: string) =>
@@ -73,24 +76,42 @@ export default function App() {
   const toggleDay = (i: string, p: number, d: number) =>
     setSelectedDay((prev) => (prev?.i === i && prev.p === p && prev.d === d) ? null : { i, p, d });
 
-  const cycleStatus = (i: string, pi: number, di: number, ti: number) =>
+  const setTaskStatus = (i: string, pi: number, di: number, ti: number, newStatus: TaskStatus) =>
     setData((prev) => prev.map((init) => {
       if (init.id !== i) return init;
       const phases = init.phases.map((ph, idx) => {
         if (idx !== pi) return ph;
         const days = ph.days.map((dy, idx2) => {
           if (idx2 !== di) return dy;
-          const tasks = dy.tasks.map((tk, idx3) => {
-            if (idx3 !== ti) return tk;
-            const next: Record<TaskStatus, TaskStatus> = { pending: "in-progress", "in-progress": "done", done: "pending" };
-            return { ...tk, status: next[tk.status] };
-          });
+          const tasks = dy.tasks.map((tk, idx3) =>
+            idx3 !== ti ? tk : { ...tk, status: newStatus }
+          );
           return { ...dy, tasks };
         });
         return { ...ph, days };
       });
       return { ...init, phases };
     }));
+
+  const updateNotes = (i: string, pi: number, di: number, ti: number, notes: string) =>
+    setData((prev) => prev.map((init) => {
+      if (init.id !== i) return init;
+      const phases = init.phases.map((ph, idx) => {
+        if (idx !== pi) return ph;
+        const days = ph.days.map((dy, idx2) => {
+          if (idx2 !== di) return dy;
+          const tasks = dy.tasks.map((tk, idx3) =>
+            idx3 !== ti ? tk : { ...tk, notes }
+          );
+          return { ...dy, tasks };
+        });
+        return { ...ph, days };
+      });
+      return { ...init, phases };
+    }));
+
+  const toggleNotes = (key: string) =>
+    setExpandedNotes((prev) => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
 
   const startEdit = (i: string, p: number, d: number, t: number) => {
     const tk = data.find((x) => x.id === i)?.phases[p].days[d].tasks[t];
@@ -147,7 +168,8 @@ export default function App() {
               description: "",
               where: "",
               example: "",
-              status: "pending" as TaskStatus,
+              status: "not-started" as TaskStatus,
+              notes: "",
             }],
           };
         });
@@ -198,7 +220,7 @@ export default function App() {
             <div className="text-[10px] uppercase tracking-widest text-slate-600 px-3 mb-3">5 Pillars from your sheet</div>
             {data.map((i) => {
               const tasks = i.phases.flatMap((p) => p.days.flatMap((d) => d.tasks));
-              const done = tasks.filter((t) => t.status === "done").length;
+              const done = tasks.filter((t) => t.status === "completed").length;
               return (
                 <button
                   key={i.id}
@@ -330,7 +352,7 @@ export default function App() {
                       const key = `${i.id}-p${pIdx}`;
                       const isOpen = expanded.has(key);
                       const phaseTasks = phase.days.flatMap((d) => d.tasks);
-                      const phaseDone = phaseTasks.filter((t) => t.status === "done").length;
+                      const phaseDone = phaseTasks.filter((t) => t.status === "completed").length;
                       const phasePct = phaseTasks.length ? Math.round((phaseDone / phaseTasks.length) * 100) : 0;
 
                       return (
@@ -358,7 +380,7 @@ export default function App() {
                           {isOpen && (
                             <div className="border-t border-white/5">
                               {phase.days.map((day, dIdx) => {
-                                const dayDone = day.tasks.filter((t) => t.status === "done").length;
+                                const dayDone = day.tasks.filter((t) => t.status === "completed").length;
                                 const isSel = selectedDay?.i === i.id && selectedDay.p === pIdx && selectedDay.d === dIdx;
 
                                 return (
@@ -378,15 +400,17 @@ export default function App() {
                                     </button>
 
                                     {isSel && (
-                                      <div className="px-3 sm:px-4 pb-4 space-y-1.5">
+                                      <div className="px-3 sm:px-4 pb-4 space-y-2">
                                         {day.tasks.map((task, tIdx) => {
                                           const isEd = editing?.i === i.id && editing.p === pIdx && editing.d === dIdx && editing.t === tIdx;
+                                          const noteKey = `${i.id}-${pIdx}-${dIdx}-${tIdx}`;
+                                          const noteOpen = expandedNotes.has(noteKey);
+                                          const activeStatus = TASK_STATUSES.find(s => s.value === task.status)!;
                                           return (
-                                            <div key={task.id} className="group rounded-lg border border-white/5 bg-white/[0.02] hover:border-white/10 transition">
-                                              <div className="flex items-start gap-2 sm:gap-3 p-2 sm:p-3">
-                                                <button onClick={() => cycleStatus(i.id, pIdx, dIdx, tIdx)} className="mt-0.5 text-lg leading-none shrink-0 hover:scale-110 transition" title="Click to cycle status">
-                                                  {checkIcon[task.status]}
-                                                </button>
+                                            <div key={task.id} className="rounded-xl border border-white/5 bg-white/[0.02] hover:border-white/10 transition overflow-hidden">
+                                              {/* Task header */}
+                                              <div className="flex items-start gap-2 sm:gap-3 p-3">
+                                                <div className={`mt-1 w-2 h-2 rounded-full shrink-0 ${activeStatus.dot}`} />
                                                 <div className="flex-1 min-w-0">
                                                   {isEd ? (
                                                     <div className="flex gap-2">
@@ -395,30 +419,66 @@ export default function App() {
                                                       <button onClick={() => setEditing(null)} className="text-xs px-2 py-1 bg-white/10 text-slate-300 rounded hover:bg-white/20 shrink-0">✕</button>
                                                     </div>
                                                   ) : (
-                                                    <>
-                                                      <div className="flex items-start justify-between gap-2">
-                                                        <span className={`text-xs sm:text-sm ${task.status === "done" ? "text-slate-500 line-through" : "text-slate-200"}`}>{task.title}</span>
-                                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition shrink-0">
-                                                          <button onClick={() => startEdit(i.id, pIdx, dIdx, tIdx)} className="text-xs px-1.5 py-0.5 rounded bg-white/10 text-slate-400 hover:text-white" title="Edit">✎</button>
-                                                          <button onClick={() => deleteTask(i.id, pIdx, dIdx, tIdx)} className="text-xs px-1.5 py-0.5 rounded bg-white/10 text-slate-400 hover:text-rose-300" title="Delete">✕</button>
-                                                        </div>
+                                                    <div className="flex items-start justify-between gap-2">
+                                                      <span className={`text-xs sm:text-sm leading-snug ${task.status === "completed" ? "text-slate-500 line-through" : "text-slate-200"}`}>{task.title}</span>
+                                                      <div className="flex items-center gap-1 shrink-0">
+                                                        <button onClick={() => startEdit(i.id, pIdx, dIdx, tIdx)} className="text-xs px-1.5 py-0.5 rounded bg-white/10 text-slate-400 hover:text-white" title="Edit">✎</button>
+                                                        <button onClick={() => deleteTask(i.id, pIdx, dIdx, tIdx)} className="text-xs px-1.5 py-0.5 rounded bg-white/10 text-slate-400 hover:text-rose-300" title="Delete">✕</button>
                                                       </div>
-                                                      {task.description && <div className="text-[11px] sm:text-xs text-slate-400 mt-1 leading-relaxed whitespace-pre-line">{task.description}</div>}
-                                                      {task.where && (
-                                                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                                                          <span className="text-[10px] uppercase tracking-wider text-cyan-400 font-medium">Where:</span>
-                                                          <span className="text-xs text-slate-300">{task.where}</span>
-                                                        </div>
-                                                      )}
-                                                      {task.example && (
-                                                        <div className="mt-2 rounded-lg bg-white/[0.03] border border-white/5 p-2 sm:p-3">
-                                                          <span className="text-[10px] uppercase tracking-wider text-amber-400 font-medium">Example / Template:</span>
-                                                          <pre className="text-[11px] sm:text-xs text-slate-300 mt-1 whitespace-pre-wrap font-sans leading-relaxed overflow-x-auto">{task.example}</pre>
-                                                        </div>
-                                                      )}
-                                                    </>
+                                                    </div>
+                                                  )}
+                                                  {task.description && <div className="text-[11px] sm:text-xs text-slate-400 mt-1 leading-relaxed whitespace-pre-line">{task.description}</div>}
+                                                  {task.where && (
+                                                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                                                      <span className="text-[10px] uppercase tracking-wider text-cyan-400 font-medium">Where:</span>
+                                                      <span className="text-xs text-slate-300">{task.where}</span>
+                                                    </div>
+                                                  )}
+                                                  {task.example && (
+                                                    <div className="mt-2 rounded-lg bg-white/[0.03] border border-white/5 p-2 sm:p-3">
+                                                      <span className="text-[10px] uppercase tracking-wider text-amber-400 font-medium">Example / Template:</span>
+                                                      <pre className="text-[11px] sm:text-xs text-slate-300 mt-1 whitespace-pre-wrap font-sans leading-relaxed overflow-x-auto">{task.example}</pre>
+                                                    </div>
                                                   )}
                                                 </div>
+                                              </div>
+
+                                              {/* Status pills */}
+                                              <div className="px-3 pb-2 flex flex-wrap gap-1.5">
+                                                {TASK_STATUSES.map(s => (
+                                                  <button
+                                                    key={s.value}
+                                                    onClick={() => setTaskStatus(i.id, pIdx, dIdx, tIdx, s.value)}
+                                                    className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium ring-1 transition-all ${
+                                                      task.status === s.value
+                                                        ? s.style + " scale-105 shadow-sm"
+                                                        : "bg-white/[0.03] text-slate-500 ring-white/10 hover:bg-white/10 hover:text-slate-300"
+                                                    }`}
+                                                  >
+                                                    <span className={`w-1.5 h-1.5 rounded-full ${task.status === s.value ? s.dot : "bg-slate-600"}`} />
+                                                    {s.label}
+                                                  </button>
+                                                ))}
+                                              </div>
+
+                                              {/* Notes section */}
+                                              <div className="px-3 pb-3">
+                                                <button
+                                                  onClick={() => toggleNotes(noteKey)}
+                                                  className="flex items-center gap-1.5 text-[11px] text-slate-500 hover:text-slate-300 transition mb-1"
+                                                >
+                                                  <span>{noteOpen ? "▾" : "▸"}</span>
+                                                  <span>{noteOpen ? "Hide Notes" : task.notes ? "📝 View Notes" : "+ Add Notes"}</span>
+                                                </button>
+                                                {noteOpen && (
+                                                  <textarea
+                                                    value={task.notes ?? ""}
+                                                    onChange={(e) => updateNotes(i.id, pIdx, dIdx, tIdx, e.target.value)}
+                                                    placeholder="Write your notes, links, observations, or anything relevant here..."
+                                                    rows={4}
+                                                    className="w-full bg-white/[0.03] border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-300 placeholder-slate-600 focus:outline-none focus:border-cyan-500/40 focus:ring-1 focus:ring-cyan-500/10 resize-y leading-relaxed"
+                                                  />
+                                                )}
                                               </div>
                                             </div>
                                           );

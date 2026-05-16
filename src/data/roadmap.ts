@@ -1,6 +1,6 @@
 export type Owner = "Sumit" | "Anubhav" | "Ditya";
 export type Status = "Planned" | "In Progress" | "Blocked" | "Done";
-export type TaskStatus = "pending" | "in-progress" | "done";
+export type TaskStatus = "not-started" | "started" | "in-progress" | "completed" | "paused";
 
 export interface DayTask {
   id: string;
@@ -9,6 +9,7 @@ export interface DayTask {
   where?: string;
   example?: string;
   status: TaskStatus;
+  notes?: string;
 }
 
 export interface DayItem {
@@ -52,8 +53,8 @@ function tid(): string {
   return `t-${++_c}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function T(title: string, description?: string, where?: string, example?: string, status: TaskStatus = "pending"): DayTask {
-  return { id: tid(), title, description, where, example, status };
+function T(title: string, description?: string, where?: string, example?: string, status: TaskStatus = "not-started"): DayTask {
+  return { id: tid(), title, description, where, example, status, notes: "" };
 }
 
 export const initiatives: Initiative[] = [
